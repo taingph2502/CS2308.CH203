@@ -1,0 +1,14 @@
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+artifacts/
+tmp/
+runs/
+reports/*.html
+reports/*.png
+reports/*.csv
+reports/*.json
+

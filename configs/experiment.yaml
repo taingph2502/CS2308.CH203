@@ -1,0 +1,60 @@
+project:
+  seed: 2308
+  run_name: vi_medical_pissa_rag_v1
+  remote_root: /workspace/CS2308
+
+sources:
+  finetune_dataset:
+    repo_id: hungnm/vietnamese-medical-qa
+    revision: 6201315cb45368b2285979497197faf09042a9c3
+  rag_dataset:
+    repo_id: tarudesu/ViHealthQA
+    revision: d90a62deedfc822a15de3f35535bb41474e4d3f4
+  base_model:
+    repo_id: Qwen/Qwen2.5-3B-Instruct
+    revision: aa8e72537993ba99e69dfaafa59ed015b17504d1
+  embedder:
+    repo_id: BAAI/bge-m3
+    revision: 5617a9f61b028005a4858fdac845db406aefb181
+  reranker:
+    repo_id: BAAI/bge-reranker-v2-m3
+    revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+  phobert:
+    repo_id: vinai/phobert-base-v2
+    revision: 86cd7fd4c148980922ac11a2cf5e257f2ba639e1
+
+data:
+  train_size: 5000
+  finetune_validation_size: 500
+  evaluation_size: 1000
+  near_duplicate_jaccard: 0.85
+
+training:
+  epochs: 3
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.03
+  max_length_default: 1024
+  max_length_fallback: 1536
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  rank: 32
+  alpha: 32
+  pissa_init: pissa_niter_16
+  save_steps: 100
+  eval_steps: 100
+  effective_batch_size: 32
+
+retrieval:
+  embedding_max_length: 1024
+  rrf_k: 60
+  rerank_depth: 100
+  rag_context_k: 3
+  rag_context_token_budget: 1800
+
+generation:
+  max_new_tokens: 512
+  batch_size: 16
+  max_input_tokens: 2304
+
+evaluation:
+  bootstrap_samples: 10000
+  phobert_num_layers: 12
