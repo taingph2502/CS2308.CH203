@@ -1,0 +1,19 @@
+{
+  "config_hash": "c5445f2e5b48145b098e059cb5fff4665ddba656885ade1bb2b744e114fb6c9c",
+  "created_at_unix": 1789111499.656426,
+  "inputs": {
+    "finetune_rows": 9335,
+    "vihealthqa_splits": {
+      "test": 2013,
+      "train": 7009,
+      "validation": 993
+    }
+  },
+  "outputs": {
+    "documents": 10015,
+    "evaluation": 1000,
+    "train": 5000,
+    "validation": 500
+  },
+  "status": "complete"
+}

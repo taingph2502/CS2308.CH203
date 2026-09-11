@@ -1,0 +1,7 @@
+{
+  "clean_rows": 9330,
+  "exact_question_matches": 0,
+  "near_question_matches": 5,
+  "raw_finetune_rows": 9335,
+  "test_rows": 2013
+}
