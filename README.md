@@ -1,86 +1,43 @@
 # CS2308.CH203
 
-## KẾ HOẠCH
+## Retrieval Ablation
 
-### 1. Finetune
-- Base model: Qwen/Qwen2.5-3B-Instruct
-- Kỹ thuật: PiSSA (có trong thư viện PEFT)
-- Dataset: hungnm/vietnamese-medical-qa (dùng 3-5k mẫu)
+Bảng này đo lường xem các thuật toán tìm kiếm tài liệu có đưa được **tài liệu y khoa chính xác (Gold Document)** lên các vị trí đầu tiên hay không (trên 1.000 câu hỏi test):
 
-### 2. RAG
-- Corpus: tarudesu/ViHealthQA
-- Retrieval: BAAI/bge-m3 + BM25 + RRF
-- Rerank: BAAI/bge-reranker-v2-m3
-- Model: Qwen/Qwen2.5-3B-Instruct (đã finetune)
+| Method | MRR | Hit@1 | Hit@3 | Hit@5 | Hit@10 |
+|---|---:|---:|---:|---:|---:|
+| bm25 | 0.3870 | 0.3110 | 0.4110 | 0.4680 | 0.5410 |
+| bge_m3 | 0.5388 | 0.4480 | 0.5910 | 0.6380 | 0.7040 |
+| hybrid_rrf | 0.4827 | 0.3850 | 0.5270 | 0.5890 | 0.6670 |
+| hybrid_reranker | **0.5755** | **0.4910** | **0.6190** | **0.6770** | **0.7400** |
 
-### 3. Ablation Study
-- Metric: 
-  - Retrieval: MRR
-  - Generation: PhoBERT-BERTScore, BGE-M3 Cosine Similarity
-- Đối tượng đánh giá generation:
-  - qwen2.5
-  - qwen2.5 + RAG
-  - qwen2.5 + PiSSA
-  - qwen2.5 + PiSSA + RAG
- 
-## LƯU Ý
+**Các chỉ số cột:**
+- **MRR** (Mean Reciprocal Rank - Điểm xếp hạng nghịch đảo): Thước đo vị trí trung bình của tài liệu đúng. Nếu tài liệu đúng nằm ở Top 1 $\rightarrow$ điểm là $1/1 = 1.0$; nằm ở Top 2 $\rightarrow$ điểm là $1/2 = 0.5$; Top 3 $\rightarrow$ $1/3 = 0.33$. Điểm càng gần 1.0 càng tốt.
+- **Hit@K** (Tỷ lệ trúng Top-K): Tỷ lệ % các câu hỏi mà tài liệu đúng xuất hiện trong Top K kết quả trả về.
 
-### 1. Finetune
+**So sánh các phương pháp hàng:**
+- **bm25** (Tìm kiếm từ khóa): Kém nhất (MRR 0.3870) vì không hiểu được từ đồng nghĩa y khoa (ví dụ: "đau đầu" vs "nhức nửa đầu").
+- **bge_m3** (Dense Embedding): Vượt trội hơn hẳn (MRR 0.5388, Hit@10 đạt 70.4%).
+- **hybrid_reranker** (Kết hợp BM25 + BGE-M3 rồi dùng Re-ranker sắp xếp lại Top 100): Đạt điểm cao nhất toàn diện (MRR 0.5755, Hit@10 đạt 74%). Đây là lý do phương pháp này được chọn làm đầu vào để cấp ngữ cảnh cho nhánh RAG.
 
-1. **Cách lưu và merge trọng số PiSSA trong PEFT:**
-* Khác với LoRA thông thường (khởi tạo adapter bằng 0), PiSSA phân rã ma trận gốc qua SVD, nên trọng số gốc của base model sẽ bị sửa đổi để khớp với phần dư.
-* *Lưu ý:* Sau khi train xong, **hãy dùng `model.merge_and_unload()` rồi lưu full model ra một thư mục mới**. Tránh việc chỉ lưu mỗi folder adapter rồi sau này load đè lên base model gốc theo cách thông thường, rất dễ bị lệch trọng số nếu cấu hình không khớp.
+## Generation Ablation
 
-2. **Masking Loss (Chỉ tính loss trên câu trả lời của bác sĩ):**
-* Đừng để mô hình tính loss trên cả phần câu hỏi của người dùng. Hãy dùng `DataCollatorForCompletionOnlyLM` (của thư viện `trl`) hoặc gán nhãn `-100` cho toàn bộ các token thuộc lượt hỏi của User. Mô hình chỉ cần học cách *sinh câu trả lời*, không cần học lại câu hỏi.
+| System | PhoBERT-BERTScore F1 (mean [CI95]) | BGE-M3 cosine (mean [CI95]) |
+|---|---:|---:|
+| qwen | 0.6237 [0.6212, 0.6261] | 0.7817 [0.7768, 0.7866] |
+| qwen_rag | **0.6764** [0.6721, 0.6806] | **0.8134** [0.8077, 0.8191] |
+| qwen_pissa | 0.5975 [0.5938, 0.6012] | 0.7505 [0.7449, 0.7561] |
+| qwen_pissa_rag | *0.6643* [0.6569, 0.6717] | *0.7881* [0.7813, 0.7947] |
 
-3. **Tuân thủ đúng ChatML Template:**
-* Qwen2.5 dùng cú pháp ChatML (`<|im_start|>user...`). Hãy luôn nạp dữ liệu qua hàm `tokenizer.apply_chat_template(..., tokenize=False)` thay vì tự nối chuỗi bằng tay bằng dấu `\n`.
+**Ý nghĩa của 2 thước đo:**
 
-4. **Độ dài chuỗi (`max_seq_length`):**
-* Giới hạn `max_seq_length` khoảng **512 – 768 tokens**. Bộ dữ liệu y tế hỏi đáp thường ngắn, đặt 2048 hoặc 4096 tokens sẽ gây tốn VRAM không cần thiết và làm chậm tốc độ huấn luyện.
+- **PhoBERT-BERTScore F1:**
+Đo độ tương đồng ngữ nghĩa từng từ (token-level) giữa câu trả lời mô hình sinh ra và câu trả lời chuẩn của bác sĩ.
+Sử dụng mô hình ngôn ngữ tiếng Việt chuyên sâu PhoBERT (sau khi đã tách từ chuẩn qua VnCoreNLP). Thang điểm 0 – 1, càng cao nghĩa là câu trả lời càng bám sát ý tứ ngữ nghĩa của câu trả lời mẫu.
 
-### 2. RAG
+- **BGE-M3 cosine:**
+Đo độ tương đồng ngữ nghĩa toàn bộ văn bản (Sentence-level Semantic Cosine Similarity). Đo xem tổng thể câu trả lời có cùng chủ đề, định hướng chẩn đoán với câu mẫu hay không.
 
-1. **BM25 tiếng Việt bắt buộc phải tách từ (*Word Segmentation*):**
-* BM25 mặc định chia từ theo khoảng trắng. Trong tiếng Việt, nếu không tách từ ghép, từ `"bệnh nhân"` sẽ bị hiểu thành hai từ rời rạc là `"bệnh"` và `"nhân"`.
-* *Giải pháp:* Dùng `pyvi` hoặc `underthesea` để chuẩn hóa văn bản trước khi đưa vào BM25: `"bệnh nhân"` $\rightarrow$ `"bệnh_nhân"`, `"huyết áp"` $\rightarrow$ `"huyết_áp"`.
-
-2. **Gán `doc_id` tường minh cho từng Chunk trong DB:**
-* Để tính được chỉ số MRR ở Phần 3, bạn **bắt buộc phải biết chính xác đoạn văn nào là đáp án gốc**.
-* Khi nạp câu trả lời của tập `test` vào DB, hãy gán thêm metadata: ví dụ `metadata={"doc_id": "test_01"}`. Khi truy vấn câu hỏi số 01, bạn chỉ cần kiểm tra xem trong danh sách trả về, chunk có `doc_id == "test_01"` nằm ở vị trí thứ mấy. Nếu so khớp bằng text thông thường, chỉ cần một dấu cách hay ngắt dòng khác nhau là so sánh chuỗi sẽ bị sai.
-
-3. **Phân bổ số lượng Top-K qua từng tầng:**
-* Đừng đưa quá nhiều văn bản vào Reranker vì Cross-Encoder tính toán rất nặng:
-* *BM25:* Lấy top 30.
-* *BGE-M3 Dense:* Lấy top 30.
-* *RRF ($k=60$):* Gộp lại và lấy top 15 văn bản điểm cao nhất.
-* *BGE-Reranker-v2-m3:* Chấm điểm lại 15 văn bản này và chỉ chọn lấy **Top 3** để đưa vào Prompt cho Qwen.
-
-### 3. Ablation Study
-
-1. **Tắt tính ngẫu nhiên khi sinh câu trả lời (Greedy Decoding):**
-* Khi so sánh giữa nhánh *(1) Chỉ có PiSSA* và nhánh *(2) PiSSA + RAG*, bắt buộc phải cấu hình:
-```python
-do_sample=False, temperature=0.0
-```
-
-* Nếu bật ngẫu nhiên (nhiệt độ > 0), cùng một câu hỏi chạy 2 lần sẽ ra câu trả lời khác nhau, làm kết quả so sánh PhoBERT-Score bị dao động do yếu tố may rủi chứ không phản ánh đúng tác động của RAG.
-
-2. **Kỹ thuật "Khóa đuôi" (Prompt Anchoring) cho nhánh RAG:**
-* Vì mô hình được finetune trên tập QA trực tiếp (không có ngữ cảnh RAG), ở nhánh RAG, hãy đặt câu hướng dẫn ngay sát câu hỏi:
-```text
-Tài liệu: {context}
-Câu hỏi: {question}
-Lưu ý quan trọng: Chỉ sử dụng thông tin trong tài liệu trên để trả lời.
-```
-
-3. **Cài đặt đúng tokenizer cho PhoBERT-BERTScore:**
-* Khi gọi thư viện `bert_score`, hãy truyền thêm tham số tách từ cho tiếng Việt để BERTScore tính điểm dựa trên token từ vựng chuẩn xác:
-```python
-score(cands, refs, model_type="vinai/phobert-base", lang="vi")
-```
-
-* **Bước A (Chạy Retrieval):** Nạp BGE-M3 + BM25 + Reranker $\rightarrow$ Truy vấn 50 câu test $\rightarrow$ Lưu kết quả Top-3 context và điểm MRR ra file `rag_results.jsonl`. Sau đó giải phóng GPU (`del model; torch.cuda.empty_cache()`).
-* **Bước B (Chạy Sinh văn bản):** Nạp model Qwen2.5-3B (PiSSA) $\rightarrow$ Đọc `rag_results.jsonl` $\rightarrow$ Sinh câu trả lời cho cả 2 nhánh (có RAG và không RAG) $\rightarrow$ Lưu ra file `generated_answers.jsonl`. Giải phóng GPU.
-* **Bước C (Chạy Chấm điểm):** Nạp PhoBERT & BGE-M3 $\rightarrow$ Đọc `generated_answers.jsonl` và chấm điểm BERTScore + Cosine Sim $\rightarrow$ Xuất bảng kết quả cuối cùng.
+- **Ý nghĩa của [CI95] (Khoảng tin cậy Bootstrap 95%):**
+Ví dụ: 0.6764 [0.6721, 0.6806] nghĩa là điểm trung bình là 0.6764, và ta có 95% độ tin cậy rằng điểm thực tế nằm trong dải hẹp từ 0.6721 đến 0.6806.
+Khoảng tin cậy của qwen_rag hoàn toàn không bị đè (overlap) lên các khoảng khác $\rightarrow$ Sự vượt trội của RAG là có ý nghĩa thống kê thực sự chứ không phải ngẫu nhiên.
